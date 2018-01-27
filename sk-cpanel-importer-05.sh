@@ -267,6 +267,7 @@ done
 echo "All mail accounts restored"
 ############# ssl functions <(°-°)>
 tput setaf 2
+
 echo "Restoring SSL for domains"
 tput sgr0
 
@@ -288,46 +289,58 @@ do
 	fi
 done
 function sk_restore_pass () {
-sk_actual_pass=$(grep -w "^$sk_cp_user:" /etc/shadow |tr ":" " " | awk '{ print  $2 }' )
-sk_new_pass=$(cat $sk_importer_in/shadow)
-# need replace I hope you have installed it as in most systems...  
-# sed is a hero but replace is easy and not need space // :D
-replace "$sk_cp_user:$sk_actual_pass" "$sk_cp_user:$sk_new_pass" -- /etc/shadow
-tput setaf 5
-echo "Old  cPanel password restored in $sk_cp_user vesta account"
-tput sgr0
+	sk_actual_pass=$(grep -w "^$sk_cp_user:" /etc/shadow |tr ":" " " | awk '{ print  $2 }' )
+	sk_new_pass=$(cat $sk_importer_in/shadow)
+	# need replace I hope you have installed it as in most systems...  
+	# sed is a hero but replace is easy and not need space // :D
+	replace "$sk_cp_user:$sk_actual_pass" "$sk_cp_user:$sk_new_pass" -- /etc/shadow
+	tput setaf 5
+	echo "Old  cPanel password restored in $sk_cp_user vesta account"
+	tput sgr0
 }
 function sk_fix_mx () {
-tput setaf 2
-	echo "Start With MX Records"
-tput sgr0
-cd $sk_importer_in/dnszones
-for sk_mx in $sk_domains 
-do
-	if [ -e $sk_mx.db ]; then
-		sk_id=$(grep MX /usr/local/vesta/data/users/${sk_cp_user}/dns/${sk_mx}.conf |tr "'" " " | cut -d " " -f 2)
-		/usr/local/vesta/bin/v-delete-dns-record $sk_cp_user $sk_mx $sk_id
-		grep MX ${sk_mx}.db |  awk '{for(sk=NF;sk>=1;sk--) printf "%s ", $sk;print ""}' | while read value pri ns rest
-			do
-				if [ "$ns" == "MX" ];then
-					if [ "$value" == "$sk_mx" ] || [ "$value" == "$sk_mx." ];then 
-						value=mail.$value
+	tput setaf 2
+		echo "Start With MX Records"
+	tput sgr0
+	cd $sk_importer_in/dnszones
+	for sk_mx in $sk_domains 
+	do
+		if [ -e $sk_mx.db ]; then
+			sk_id=$(grep MX /usr/local/vesta/data/users/${sk_cp_user}/dns/${sk_mx}.conf |tr "'" " " | cut -d " " -f 2)
+			/usr/local/vesta/bin/v-delete-dns-record $sk_cp_user $sk_mx $sk_id
+			grep MX ${sk_mx}.db |  awk '{for(sk=NF;sk>=1;sk--) printf "%s ", $sk;print ""}' | while read value pri ns rest
+				do
+					if [ "$ns" == "MX" ];then
+						if [ "$value" == "$sk_mx" ] || [ "$value" == "$sk_mx." ];then 
+							value=mail.$value
+						fi
+						/usr/local/vesta/bin/v-add-dns-record $sk_cp_user $sk_mx @ MX $value $pri
+						if [[ "$?" -ge "1" ]]; then
+							/usr/local/vesta/bin/v-add-dns-record $sk_cp_user $sk_mx @ MX mail.${sk_mx} 0
+						fi
+						echo "MX fixed in $sk_mx"
 					fi
-					/usr/local/vesta/bin/v-add-dns-record $sk_cp_user $sk_mx @ MX $value $pri
-					if [[ "$?" -ge "1" ]]; then
-						/usr/local/vesta/bin/v-add-dns-record $sk_cp_user $sk_mx @ MX mail.${sk_mx} 0
-					fi
-					echo "MX fixed in $sk_mx"
-				fi
-			done
-	fi	
-done
+				done
+		fi	
+	done
 }
 if [ "$2" == "MX" ];then
 # Need some fixed so run if you want try it, marked as experimental
 	sk_fix_mx
 fi
 sk_restore_pass
+
+# If adding an ssh key to the new install
+echo "Cheking for custom ssh keys"
+ssh=${sk_importer_in}/homedir/.ssh/
+sshgz=/root/ssh.tar.gz
+if [ -d ${ssh} ]; then
+	echo "Importing ssh keys"
+	rsync -av ${ssh} /home/${sk_cp_user}/.ssh 2>&1
+elif [ -e ${sshgz} ]; then
+	echo "Installing new ssh keypar"
+	tar xzf ${sshgz} -C /home/${sk_cp_user}/
+fi
 
 echo "Remove tmp files"
 rm -rf "/root/${sk_tmp}"
